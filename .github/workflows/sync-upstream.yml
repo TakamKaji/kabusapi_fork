@@ -1,0 +1,54 @@
+name: Sync upstream kabucom/kabusapi
+
+on:
+  schedule:
+    - cron: "17 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-kabucom-kabusapi
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out fork master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+
+      - name: Merge upstream master into fork master
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add upstream https://github.com/kabucom/kabusapi.git 2>/dev/null || \
+            git remote set-url upstream https://github.com/kabucom/kabusapi.git
+          git fetch --prune upstream master
+
+          if git merge-base --is-ancestor upstream/master HEAD; then
+            echo "Fork is already up to date with kabucom/kabusapi:master." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "### Upstream commits to import" >> "$GITHUB_STEP_SUMMARY"
+          git log --oneline --no-decorate HEAD..upstream/master | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
+
+          # Keep the automation workflow in this fork while merging upstream changes.
+          # If upstream ever conflicts with fork-only automation files, fail instead of
+          # force-overwriting either side so the conflict is visible in Actions.
+          git merge --no-edit upstream/master
+          git push origin HEAD:master
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Fork master was synchronized successfully." >> "$GITHUB_STEP_SUMMARY"
